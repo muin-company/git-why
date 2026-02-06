@@ -120,7 +120,36 @@ async function runTests() {
     }
   })) passed++; else failed++;
 
-  // Test 7: Full explanation (without AI - just structure)
+  // Test 7: Line range support
+  if (test('GitWhy.getBlame() supports line ranges', () => {
+    const commits = gitWhy.getBlame('test.js', 2, 4);
+    if (commits.length === 0) {
+      throw new Error('Should return commits for range');
+    }
+  })) passed++; else failed++;
+
+  // Test 8: Multiple files setup
+  if (test('Setup for multiple files', () => {
+    writeFileSync('test2.js', `function goodbye() {
+  return "farewell";
+}
+`);
+    execSync('git add test2.js');
+    execSync('git commit -m "Add goodbye function"');
+    
+    if (!existsSync('test2.js')) {
+      throw new Error('test2.js should exist');
+    }
+  })) passed++; else failed++;
+
+  // Test 9: Multiple files tracking
+  if (test('GitWhy tracks multiple files', () => {
+    if (!gitWhy.isFileTracked('test2.js')) {
+      throw new Error('Should track test2.js');
+    }
+  })) passed++; else failed++;
+
+  // Test 10: Full explanation (without AI - just structure)
   if (test('GitWhy.explain() handles file without errors', async () => {
     // This will fail without API key, but should fail gracefully
     try {

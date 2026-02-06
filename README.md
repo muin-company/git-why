@@ -41,9 +41,24 @@ export ANTHROPIC_API_KEY="your-key-here"
 git-why src/auth.js:42
 ```
 
+### Explain a line range
+```bash
+git-why src/auth.js:42-58
+```
+
 ### Explain a whole file
 ```bash
 git-why src/auth.js
+```
+
+### Explain multiple files
+```bash
+git-why src/auth.js src/utils.js src/api.js
+```
+
+### Mix files and ranges
+```bash
+git-why src/auth.js:42-58 src/utils.js:10 src/api.js
 ```
 
 ### Explain a function
