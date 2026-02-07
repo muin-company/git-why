@@ -1115,6 +1115,819 @@ Built with:
 
 ---
 
+## Common Use Cases
+
+### 1. Before Refactoring Legacy Code
+**Scenario:** You find confusing code and want to simplify it.
+
+**Workflow:**
+```bash
+# Step 1: Understand why it exists
+git-why src/legacy/payment-handler.js --function processPayment
+
+# Output might reveal:
+# "This defensive null checking exists because of a production incident where
+#  undefined amounts caused $0 charges, creating accounting chaos..."
+
+# Step 2: Check if the edge case is still relevant
+git log --grep="payment.*bug" --since="1 year ago"
+
+# Step 3: Decide whether to keep or refactor
+# If incident was recent or edge case still applies → keep the "ugly" code
+# If resolved or obsolete → safe to refactor
+```
+
+**Before git-why:**
+- See weird code → refactor blindly → break production
+- Or: Keep weird code → never improve codebase
+
+**After git-why:**
+- Understand context → make informed decision
+- Refactor safely with edge cases in mind
+
+---
+
+### 2. Code Review - Understanding Intent
+**Scenario:** Reviewing a PR with suspicious looking changes.
+
+```bash
+# PR adds strange validation logic
+git-why src/validators/email.js:87
+
+# Output:
+# "This unusual regex was added after discovering standard RFC 5322
+#  validation rejected valid corporate emails with + signs..."
+
+# Now you understand it's not over-engineering, it's battle-tested
+```
+
+**Use in PR reviews:**
+```bash
+# For each changed file:
+for file in $(git diff --name-only main..feature-branch); do
+  echo "=== Context for $file ==="
+  git-why "$file"
+done > pr-context.md
+
+# Share in PR description
+```
+
+---
+
+### 3. Onboarding New Team Members
+**Scenario:** New developer asks "why does this code exist?"
+
+```bash
+# Instead of explaining verbally, generate documentation:
+git-why src/core/*.js > docs/architecture-decisions.md
+
+# Or specific modules:
+git-why src/auth/jwt.js > docs/auth-explained.md
+git-why src/cache/invalidation.js > docs/cache-explained.md
+```
+
+**Team onboarding checklist:**
+```markdown
+# New Developer Setup
+
+1. Clone repo
+2. Read architecture docs:
+   - `git-why src/core/app.js > explained/core-architecture.md`
+   - `git-why src/api/routes.js > explained/api-design.md`
+3. Review historical decisions before making changes
+```
+
+---
+
+### 4. Debugging "Why Did This Change?"
+**Scenario:** Feature worked last month, now it's broken.
+
+```bash
+# Find what changed
+git blame src/broken-feature.js
+
+# Understand why it changed
+git-why src/broken-feature.js:42-58
+
+# Output:
+# "This was changed to handle edge case X after incident Y..."
+# "The original implementation worked for 90% of cases but failed when..."
+
+# Now you know whether to revert or fix differently
+```
+
+---
+
+### 5. Compliance & Audit Documentation
+**Scenario:** Need to explain why security decisions were made.
+
+```bash
+# Generate audit trail
+git-why src/security/*.js --verbose --json > security-audit.json
+
+# Or human-readable:
+git-why src/auth/permissions.js > docs/security/permission-model-rationale.md
+```
+
+**Compliance report generation:**
+```bash
+#!/bin/bash
+# Generate quarterly security audit report
+
+echo "# Security Code Audit - Q1 2026" > audit-report.md
+echo "" >> audit-report.md
+
+for file in src/security/*.js src/auth/*.js; do
+  echo "## $(basename $file)" >> audit-report.md
+  git-why "$file" --verbose >> audit-report.md
+  echo "" >> audit-report.md
+done
+```
+
+---
+
+### 6. Understanding Performance Optimizations
+**Scenario:** See complex caching logic and wonder if it's needed.
+
+```bash
+git-why src/cache/strategy.js --function invalidateCache
+
+# Output:
+# "This aggressive invalidation (clearing all related keys) was added after
+#  a production bug where stale data caused users to see outdated info for hours.
+#  Performance impact was measured at ~5ms per invalidation, acceptable given
+#  the correctness improvement."
+
+# Metrics mentioned in commit:
+# - Before: 0ms, but data stale for hours
+# - After: 5ms, data always fresh
+```
+
+**When NOT to optimize:**
+- git-why shows the "slow" code prevents a real bug
+- Performance cost is justified by correctness
+- Removing it risks recreating historical issues
+
+---
+
+### 7. API Design Decisions
+**Scenario:** API has unusual endpoint structure.
+
+```bash
+git-why src/api/routes/user.js:25
+
+# Output:
+# "The POST /users/:id/verify endpoint exists separately from PUT /users/:id
+#  because third-party integration required a specific verification flow that
+#  didn't fit RESTful conventions. See discussion: #PR-234"
+```
+
+**API documentation generation:**
+```bash
+# Generate "Why we designed it this way" docs
+for route in src/api/routes/*.js; do
+  git-why "$route" > docs/api/$(basename $route .js)-rationale.md
+done
+```
+
+---
+
+### 8. Dependency Update Investigation
+**Scenario:** Considering updating a pinned dependency.
+
+```bash
+# Why is this dependency pinned to exact version?
+git-why package.json | grep "react"
+
+# Output:
+# "React is pinned to 17.0.2 because 18.x breaks legacy class components
+#  in the admin panel. Migration plan tracked in issue #456."
+
+# Check if migration is done:
+gh issue view 456
+
+# If resolved → safe to upgrade
+# If not → keep pinned version
+```
+
+---
+
+### 9. Security Vulnerability Context
+**Scenario:** Security scanner flags old code as vulnerable.
+
+```bash
+# Why does this old crypto code still exist?
+git-why src/utils/encryption.js
+
+# Output:
+# "This implementation is intentionally legacy to maintain compatibility with
+#  encrypted data from 2019-2022. New code uses crypto-v2.js. DO NOT MODIFY
+#  without migration plan for 10TB of encrypted user data."
+
+# Decision: Don't "fix" it blindly, plan proper migration
+```
+
+---
+
+### 10. Technical Debt Triage
+**Scenario:** Prioritizing which technical debt to tackle.
+
+```bash
+# Find old, complex code
+git log --all --format="%H %s" --since="2 years ago" | \
+  grep -i "workaround\|hack\|temp\|fixme" | \
+  while read commit msg; do
+    git-why --commit $commit
+  done > technical-debt-report.md
+```
+
+**Prioritization criteria:**
+- **High priority:** Workaround for bug that's been fixed upstream
+- **Medium priority:** Hack for old browser that we no longer support
+- **Low priority:** Complex logic that prevents real, ongoing issue
+
+---
+
+## Tips & Tricks
+
+### Performance & Efficiency
+
+**1. Cache explanations for frequently checked files:**
+```bash
+# Generate explanations once
+mkdir -p .git-why-cache
+git-why src/core/app.js > .git-why-cache/core-app.md
+
+# Read from cache instead of regenerating
+cat .git-why-cache/core-app.md
+```
+
+**2. Limit analysis to recent commits:**
+```bash
+# Only analyze last 6 months (faster)
+git-why src/file.js --since="6 months ago"
+
+# Feature request - not yet implemented
+```
+
+**3. Batch process multiple files:**
+```bash
+# Instead of calling git-why 50 times:
+find src -name "*.js" | xargs -I {} git-why {} > bulk-explanations.md
+
+# Or parallel processing:
+find src -name "*.js" | parallel git-why {} > explanations/{/}.md
+```
+
+---
+
+### Integration Patterns
+
+**1. Git commit message enhancement:**
+```bash
+#!/bin/bash
+# .git/hooks/prepare-commit-msg
+
+# Auto-add context to commit messages
+COMMIT_FILE=$1
+
+git diff --cached --name-only | while read file; do
+  echo "" >> $COMMIT_FILE
+  echo "Context for $file:" >> $COMMIT_FILE
+  git-why "$file" --compact >> $COMMIT_FILE
+done
+```
+
+**2. Pull request templates:**
+```markdown
+<!-- .github/pull_request_template.md -->
+
+## Changes
+- Modified src/auth.js to add new feature
+
+## Historical Context
+<!-- Auto-generated by git-why -->
+```
+
+**GitHub Action to auto-fill context:**
+```yaml
+- name: Add historical context to PR
+  run: |
+    for file in $(git diff --name-only HEAD^); do
+      git-why "$file" >> pr-context.md
+    done
+    gh pr comment $PR_NUMBER --body-file pr-context.md
+```
+
+**3. Documentation generation:**
+```bash
+# Generate "How we got here" docs for wiki
+git-why src/core/*.js > wiki/architecture-evolution.md
+
+# Update on every main branch push:
+# .github/workflows/update-docs.yml
+git-why src/ > docs/code-history.md
+git add docs/
+git commit -m "docs: update code history"
+git push
+```
+
+---
+
+### Advanced Git Commands
+
+**1. Explain a specific commit:**
+```bash
+# Get SHA from git blame
+git blame src/auth.js | grep "suspicious line"
+# Output: a3b4c5d6 (Alice 2025-12-03 ...) suspicious code here
+
+# Explain that commit
+git show a3b4c5d6 | git-why
+```
+
+**2. Compare two versions:**
+```bash
+# Explain how a file evolved between branches
+git diff main..feature-branch src/file.js | git-why
+
+# Or specific commits:
+git diff abc123..def456 src/file.js | git-why
+```
+
+**3. Find when a function was introduced:**
+```bash
+# Git pickaxe + git-why
+git log -S"function validateUser" --all src/auth.js
+
+# Then explain the commit:
+git-why src/auth.js --function validateUser
+```
+
+---
+
+### Shell Functions & Aliases
+
+**Add to ~/.bashrc or ~/.zshrc:**
+```bash
+# Quick git-why alias
+alias gwhy='git-why'
+
+# Explain current line in vim/nano
+gwhy-line() {
+  local file=$1
+  local line=$(echo "$2" | cut -d: -f1)
+  git-why "$file:$line"
+}
+# Usage: gwhy-line src/auth.js 42
+
+# Explain changed files in current branch
+gwhy-branch() {
+  local base=${1:-main}
+  git diff --name-only $base..HEAD | while read file; do
+    echo "=== $file ==="
+    git-why "$file"
+  done
+}
+# Usage: gwhy-branch main
+
+# Explain staged changes before committing
+gwhy-staged() {
+  git diff --cached --name-only | while read file; do
+    echo "=== $file ==="
+    git-why "$file"
+  done
+}
+
+# Fuzzy finder integration (requires fzf)
+gwhy-fzf() {
+  local file=$(git ls-files | fzf --preview 'git-why {} 2>/dev/null')
+  [ -n "$file" ] && git-why "$file"
+}
+```
+
+---
+
+### IDE Integration Tips
+
+**1. VS Code custom keybinding:**
+```json
+{
+  "key": "ctrl+shift+w",
+  "command": "workbench.action.terminal.sendSequence",
+  "args": {
+    "text": "git-why ${file}:${lineNumber}\n"
+  }
+}
+```
+
+**2. Vim integration:**
+```vim
+" Add to ~/.vimrc
+nnoremap <leader>gw :!git-why %:p<CR>
+
+" Explain current line
+nnoremap <leader>gl :execute '!git-why ' . expand('%:p') . ':' . line('.')<CR>
+```
+
+**3. IntelliJ / WebStorm:**
+```xml
+<!-- Settings > Tools > External Tools -->
+<tool name="git-why">
+  <program>git-why</program>
+  <arguments>$FilePath$:$LineNumber$</arguments>
+  <workingDirectory>$ProjectFileDir$</workingDirectory>
+</tool>
+```
+
+---
+
+### JSON Output Processing
+
+**Extract specific information:**
+```bash
+# Get only the explanation text
+git-why src/file.js --json | jq -r '.explanation'
+
+# List all commits analyzed
+git-why src/file.js --json | jq -r '.commits[].sha'
+
+# Get commit authors
+git-why src/file.js --json | jq -r '.commits[].author' | sort -u
+
+# Find commits from specific author
+git-why src/file.js --json | jq '.commits[] | select(.author == "Alice Chen")'
+```
+
+**Generate reports:**
+```bash
+# Monthly contributor summary
+git-why src/ --json | \
+  jq -r '.commits[] | "\(.date[:7]) - \(.author)"' | \
+  sort | uniq -c > monthly-contributors.txt
+
+# Code age analysis
+git-why src/ --json | \
+  jq -r '.commits[] | .date' | \
+  awk '{count[$1]++} END {for (date in count) print date, count[date]}'
+```
+
+---
+
+### Team Workflow Integration
+
+**1. Code review checklist:**
+```markdown
+## Code Review Checklist
+
+- [ ] Code works as expected
+- [ ] Tests pass
+- [ ] **Historical context reviewed** (`git-why <changed-files>`)
+- [ ] No regression of previous bug fixes
+- [ ] Documentation updated
+```
+
+**2. Definition of Done:**
+```markdown
+A task is Done when:
+- Feature implemented
+- Tests written
+- **Code history documented** (`git-why` run and committed to docs/)
+- PR approved
+```
+
+**3. Knowledge transfer sessions:**
+```bash
+# Before a team member leaves:
+git-why src/ --verbose > handoff-docs/code-context-$(date +%Y%m%d).md
+
+# New team member reads this instead of asking "why?" repeatedly
+```
+
+---
+
+## FAQ
+
+### Q: Does git-why work on new files with no history?
+**A:** No, git-why requires at least one commit. For new files:
+
+```bash
+$ git-why src/new-file.js
+Error: No git history found for this file
+
+# Solution:
+git add src/new-file.js
+git commit -m "Add new file"
+git-why src/new-file.js  # Now works
+```
+
+---
+
+### Q: Can git-why follow file renames?
+**A:** Not yet. If you rename a file, git-why only shows history after the rename.
+
+**Workaround:**
+```bash
+# Use git log --follow
+git log --follow --oneline src/renamed-file.js
+
+# Then manually check old filename:
+git-why old-filename.js
+```
+
+**Feature request:** Add `--follow` option to track renames.
+
+---
+
+### Q: How far back does git-why look?
+**A:** By default, all commits. For large repos, this can be slow.
+
+**Performance tips:**
+```bash
+# Analyze only recent history (faster)
+git log --since="1 year ago" src/file.js | git-why
+
+# Or limit number of commits
+git log -n 10 src/file.js | git-why
+```
+
+**Future feature:** `--since`, `--until`, `--max-commits` options.
+
+---
+
+### Q: Can I exclude certain authors or commits?
+**A:** Not yet, but you can filter git log first:
+
+```bash
+# Exclude bot commits
+git log --all --author='!.*bot$' src/file.js | git-why
+
+# Only show commits from specific author
+git log --author="Alice" src/file.js | git-why
+```
+
+---
+
+### Q: Does git-why work with monorepos?
+**A:** Yes, but specify full paths:
+
+```bash
+# From monorepo root:
+git-why packages/frontend/src/app.js
+git-why services/api/src/server.js
+
+# Or cd into package:
+cd packages/frontend
+git-why src/app.js
+```
+
+---
+
+### Q: What if my git history is messy (squashed commits, rebases)?
+**A:** git-why analyzes whatever history exists. If commits are squashed:
+- You'll see fewer, larger commits
+- Explanations will be less granular
+- Still better than no context!
+
+**Tip:** Avoid squashing commits that explain important decisions.
+
+---
+
+### Q: Can git-why analyze commits from deleted files?
+**A:** No. If a file is deleted, git-why can't analyze it directly.
+
+**Workaround:**
+```bash
+# Find when file was deleted
+git log --all --full-history -- src/deleted-file.js
+
+# Checkout old version
+git show abc123:src/deleted-file.js > /tmp/deleted-file.js
+
+# Analyze old version
+git-why /tmp/deleted-file.js  # Won't work, no git history
+
+# Better: Read commit message directly
+git show abc123
+```
+
+---
+
+### Q: How much does git-why cost (API usage)?
+**A:** Depends on file size and commit history. Typical cost per file:
+- Small file (~100 lines, 5 commits): ~$0.01
+- Medium file (~500 lines, 20 commits): ~$0.05
+- Large file (~2000 lines, 100 commits): ~$0.20
+
+**Reduce costs:**
+```bash
+# Analyze only specific lines
+git-why src/large-file.js:42-58  # Cheaper than whole file
+
+# Use caching (see Tips & Tricks)
+git-why src/file.js > cache/file-explained.md  # Reuse this
+```
+
+---
+
+### Q: Can I use git-why without an API key?
+**A:** No, git-why requires Anthropic Claude API. Future versions may support:
+- Local LLMs (Ollama, LM Studio)
+- OpenAI API
+- Self-hosted models
+
+**Current workaround:**
+- Get free trial API key from [Anthropic](https://console.anthropic.com)
+- Use git log/git blame manually (no AI explanation)
+
+---
+
+### Q: Does git-why respect .gitignore?
+**A:** Yes, git-why only analyzes files tracked by git. Ignored files are skipped.
+
+---
+
+### Q: What if commit messages are unhelpful ("fix", "update", "wip")?
+**A:** git-why still analyzes diffs, but explanations will be less informative.
+
+**Improve commit messages:**
+```bash
+# Use conventional commits
+git commit -m "fix(auth): prevent race condition in JWT validation"
+git commit -m "feat(api): add rate limiting to prevent abuse"
+
+# Not:
+git commit -m "fix"
+git commit -m "update"
+```
+
+**git-why tip:** Even with bad messages, diff analysis often reveals intent.
+
+---
+
+### Q: Can I customize the explanation style?
+**A:** Not yet. Current output is AI-generated prose.
+
+**Feature request:** Support for:
+- Different tone (technical, beginner-friendly, concise)
+- Output format (bullet points, paragraphs, markdown)
+- Language (Spanish, French, etc.)
+
+**Workaround:**
+```bash
+# Post-process output
+git-why src/file.js | \
+  sed 's/This/• This/g' |  # Convert to bullet points
+  grep -v "^$"              # Remove blank lines
+```
+
+---
+
+### Q: How do I report incorrect explanations?
+**A:** git-why uses AI, so it can misinterpret. To report issues:
+
+1. Check git log to verify actual history
+2. If explanation is wrong, open issue on GitHub with:
+   - File path
+   - Expected vs actual explanation
+   - Git history excerpt
+
+**Improve accuracy:**
+- Provide more context in commits
+- Use verbose mode: `git-why --verbose`
+- Include related commits
+
+---
+
+### Q: Can git-why analyze pull requests?
+**A:** Indirectly. Analyze files changed in PR:
+
+```bash
+# Get changed files
+gh pr view 123 --json files -q '.files[].path' | \
+  xargs -I {} git-why {}
+
+# Or with git:
+git diff main..feature-branch --name-only | \
+  xargs -I {} git-why {}
+```
+
+**Future feature:** `git-why --pr 123` (analyze entire PR).
+
+---
+
+### Q: Does git-why work offline?
+**A:** No, requires internet to call Claude API.
+
+**Offline alternatives:**
+```bash
+# Manual git log analysis
+git log --oneline --graph src/file.js
+
+# Git blame
+git blame -L 42,58 src/file.js
+
+# Pickaxe search
+git log -S "function name" --all
+```
+
+---
+
+### Q: Can I integrate git-why into CI/CD?
+**A:** Yes, but be mindful of costs. Example use cases:
+
+**Good:**
+```yaml
+# Document code on every main branch push
+- name: Update code history docs
+  run: git-why src/ > docs/code-history.md
+```
+
+**Expensive:**
+```yaml
+# DON'T run on every commit (costly!)
+- name: Explain all files
+  run: find . -name "*.js" | xargs git-why  # $$$
+```
+
+**Better:** Run weekly, or only on docs changes.
+
+---
+
+### Q: What's the difference between git-why and git log?
+**A:**
+
+| Feature | git log | git-why |
+|---------|---------|---------|
+| Output | Raw commits | AI-generated narrative |
+| Context | Technical | Business/human-readable |
+| Speed | Instant | 1-3 seconds (API call) |
+| Cost | Free | ~$0.01-0.20 per file |
+| Offline | ✅ Yes | ❌ No |
+| Understanding | Requires git expertise | Plain English |
+
+**Use git log when:**
+- You need exact commit details
+- Offline work
+- Quick reference
+
+**Use git-why when:**
+- Understanding "why" decisions were made
+- Onboarding new developers
+- Code review context
+
+---
+
+### Q: Can I run git-why on GitHub repositories I don't have locally?
+**A:** Not directly. You need to clone first:
+
+```bash
+# Clone repo
+git clone https://github.com/user/repo
+cd repo
+
+# Then analyze
+git-why src/file.js
+```
+
+**Future feature:** `git-why --repo github.com/user/repo --file src/file.js`
+
+---
+
+### Q: Does git-why support Bitbucket, GitLab, Azure DevOps?
+**A:** Yes, git-why works with any git repository. It doesn't care about hosting provider:
+
+```bash
+# GitLab
+git clone git@gitlab.com:user/repo.git
+cd repo
+git-why src/file.js
+
+# Bitbucket
+git clone https://bitbucket.org/user/repo.git
+cd repo
+git-why src/file.js
+
+# Azure DevOps
+git clone https://dev.azure.com/org/project/_git/repo
+cd repo
+git-why src/file.js
+```
+
+All work the same—git-why only reads local git history.
+
+---
+
+### Q: Can I contribute improvements or language support?
+**A:** Yes! See [Contributing](#contributing) section. Helpful contributions:
+- Better error detection
+- Support for more languages (currently best with English)
+- Performance optimizations for large repos
+- Integration examples (new IDEs, tools)
+- Bug reports with reproducible examples
+
+---
+
 Made by [muin](https://github.com/muin-company)
 
 *Use responsibly. Git history doesn't lie, but it doesn't always tell the full story either.*
