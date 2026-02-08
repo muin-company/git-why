@@ -432,6 +432,722 @@ Add 5min buffer for token expiration checks
 
 See the difference? Context and narrative, not just facts.
 
+---
+
+### Example 10: Monorepo Package Dependencies
+
+**Scenario:** Understanding why a specific package version is pinned in a monorepo.
+
+```bash
+$ git-why packages/shared/package.json:15
+
+📖 Git History Explanation
+────────────────────────────────────────────────────────────
+
+The lodash version is pinned to exactly "4.17.20" (not ^4.17.20)
+after a minor version update (4.17.21) introduced a breaking change
+in _.sortBy() behavior that broke the admin dashboard sorting.
+
+The team spent 6 hours debugging why production sorts were reversed
+before discovering the culprit. Exact version pinning prevents this
+from happening again, even though it means manual updates.
+
+Note: package.json comments aren't allowed, so this context only
+exists in git history. Don't "clean up" the exact version!
+
+────────────────────────────────────────────────────────────
+3 commits across 2 weeks
+Explained by git-why
+```
+
+---
+
+### Example 11: Commented-Out Code Archaeology
+
+**Scenario:** Why is this code commented instead of deleted?
+
+```bash
+$ git-why src/billing/payment-processor.js:67-82 --verbose
+
+📖 Git History Explanation
+────────────────────────────────────────────────────────────
+
+This Stripe v2 payment code is commented out (not deleted) because
+we're mid-migration to Stripe v3. The old code needs to stay for:
+
+1. Reference during migration (in progress, 40% complete)
+2. Emergency rollback if v3 has issues
+3. Supporting legacy webhooks for old subscriptions
+
+The migration plan (in docs/stripe-migration.md) shows this will be
+removed in Q2 2026 once all customers are migrated. Until then, this
+code serves as documentation for how the old flow worked.
+
+────────────────────────────────────────────────────────────
+Commits analyzed:
+
+e7f2a9d4 - 2026-01-10 15:30
+  David Kim
+  WIP: Begin Stripe v3 migration - keep v2 code for reference
+  
+  Comment out Stripe v2 code instead of deleting:
+  - // const paymentIntent = await stripe.paymentIntents.create({
+  - //   amount: order.total,
+  - //   currency: 'usd',
+  - //   customer: customerId,
+  - // });
+  
+  New v3 code handles this differently using SetupIntents.
+  Keep old code until migration complete (ETA: Q2 2026).
+
+a1c8e5f0 - 2025-08-15 09:45
+  Sarah Chen
+  Implement Stripe v2 payment flow
+
+────────────────────────────────────────────────────────────
+Explained by git-why
+```
+
+---
+
+### Example 12: Configuration Values That Look Random
+
+**Scenario:** Understanding magic numbers in config files.
+
+```bash
+$ git-why config/database.yml:8
+
+📖 Git History Explanation
+────────────────────────────────────────────────────────────
+
+The connection pool size of 47 (not 50 or 32) is based on actual
+production metrics from the scaling incident on Black Friday 2025.
+
+Load testing showed:
+- Pool size 32: Connection timeouts at 1000 req/s
+- Pool size 50: Database CPU spiked to 95%
+- Pool size 47: Sweet spot, handled 1200 req/s stable
+
+This was determined by binary search during a 12-hour optimization
+session. The number looks random but represents the empirically
+determined maximum connections our RDS instance can handle without
+degrading query performance.
+
+See: docs/performance/2025-11-blackfriday-postmortem.md
+
+────────────────────────────────────────────────────────────
+Explained by git-why
+```
+
+---
+
+### Example 13: Test File Patterns
+
+**Scenario:** Why are integration tests set up this way?
+
+```bash
+$ git-why --function setupTestDatabase tests/integration/setup.js
+
+📖 Git History Explanation
+────────────────────────────────────────────────────────────
+
+This elaborate test database setup (create DB → seed → snapshot → restore)
+exists because tests were taking 45 minutes to run in CI.
+
+The original approach:
+1. Each test file created its own database
+2. Seeded data from scratch
+3. Tore down after completion
+
+This caused massive overhead. The new approach:
+1. Create database ONCE
+2. Seed ONCE
+3. Take snapshot
+4. Each test restores from snapshot (2 seconds vs 30 seconds)
+
+Test suite now runs in 8 minutes. The complexity is justified by the
+12x speedup. Tried simpler approaches (transactions, truncate) but
+they didn't work with our event sourcing architecture.
+
+────────────────────────────────────────────────────────────
+9 commits across 3 months, 3 different attempted solutions
+Explained by git-why
+```
+
+---
+
+### Example 14: Security-Related Changes
+
+**Scenario:** Understanding security fixes without exposing vulnerabilities.
+
+```bash
+$ git-why src/middleware/csrf.js:23 --verbose
+
+📖 Git History Explanation
+────────────────────────────────────────────────────────────
+
+The CSRF token validation now includes Origin header checking after
+a security audit discovered a potential bypass vector. The double
+validation (token + origin) is defense-in-depth.
+
+This wasn't exploited in production, but penetration testing showed
+it was theoretically possible to bypass token validation under
+specific browser conditions. Details are in the private security
+channel, not public commits for responsible disclosure.
+
+The extra check adds negligible latency (<1ms) but closes the gap.
+
+────────────────────────────────────────────────────────────
+Commits analyzed:
+
+c4d9e2a1 - 2026-01-22 11:15  [SECURITY FIX]
+  Security Team
+  Add Origin header validation to CSRF protection
+  
+  Implements defense-in-depth for CSRF tokens.
+  See internal ticket SEC-2026-003 for details.
+  
+  Modified:
+  + if (req.headers.origin && !validOrigins.includes(req.headers.origin)) {
+  +   return res.status(403).json({ error: 'Invalid origin' });
+  + }
+
+────────────────────────────────────────────────────────────
+Explained by git-why
+```
+
+---
+
+### Example 15: Performance Regression Fix
+
+**Scenario:** Code that looks wrong but is actually a performance fix.
+
+```bash
+$ git-why src/api/search.js:95-110
+
+📖 Git History Explanation
+────────────────────────────────────────────────────────────
+
+This search implementation manually concatenates SQL instead of using
+the ORM, which looks like a code smell but is actually a deliberate
+performance optimization.
+
+The original Sequelize code was clean and elegant but generated a
+70-line SQL query with 15 joins that took 800ms for common searches.
+The hand-written SQL query does the same thing in 3 joins and runs
+in 45ms.
+
+APM data showed search was the #1 slowest endpoint. The team tried:
+1. Adding indexes (helped, but not enough)
+2. Optimizing ORM query (generated bad SQL)
+3. Raw SQL (current solution) - 17x faster
+
+Yes, it's less maintainable. Yes, it bypasses type safety. But users
+stopped complaining about slow search, and that's what shipped.
+
+SQL injection is prevented by parameterized queries (not string concat).
+
+────────────────────────────────────────────────────────────
+Explained by git-why
+```
+
+---
+
+### Example 16: Dependency Version Downgrade
+
+**Scenario:** Why is this package on an older version?
+
+```bash
+$ git-why package.json:42
+
+📖 Git History Explanation
+────────────────────────────────────────────────────────────
+
+React 17.0.2 (not 18.x) because the upgrade to React 18 broke our
+drag-and-drop library (react-beautiful-dnd) which doesn't support
+React 18's concurrent rendering yet.
+
+Attempted fixes:
+1. Update react-beautiful-dnd → No React 18 support, unmaintained
+2. Switch to dnd-kit → Would require rewriting 40+ components
+3. Fork react-beautiful-dnd → Too much maintenance burden
+4. Stay on React 17 → Current choice
+
+Trade-off: Miss React 18 features, but drag-and-drop works. The plan
+is to migrate to dnd-kit in Q3 2026 during the component library
+rewrite. For now, stability > latest features.
+
+────────────────────────────────────────────────────────────
+Explained by git-why
+```
+
+---
+
+### Example 17: Build Configuration Mystery
+
+**Scenario:** Understanding webpack/vite config choices.
+
+```bash
+$ git-why webpack.config.js:67-85 --verbose
+
+📖 Git History Explanation
+────────────────────────────────────────────────────────────
+
+This complex webpack configuration with three different entry points
+and manual chunk splitting exists because of bundle size issues that
+weren't caught until production.
+
+Original setup: Single bundle, 2.3MB gzipped
+Users on 3G connections waited 15+ seconds for initial load.
+
+The current config:
+- Vendor bundle (React, lodash, etc): 400KB, cached forever
+- App bundle: 600KB, changes with each deploy
+- Async routes: Loaded on demand, 50-200KB each
+
+This reduced initial load from 2.3MB to 1MB and First Contentful Paint
+from 8s to 2.5s on slow connections (measured via Real User Monitoring).
+
+The config is complex because webpack's automatic splitting didn't
+produce optimal boundaries for our app structure. Manual splitting
+based on actual usage patterns (from analytics) worked better.
+
+────────────────────────────────────────────────────────────
+Commits analyzed:
+
+8f3c5a12 - 2025-12-10 16:45
+  Performance Team
+  Implement bundle splitting based on RUM data
+  
+  Split points chosen by analyzing:
+  - Chrome DevTools Coverage Report
+  - Webpack Bundle Analyzer
+  - Real User Monitoring metrics
+  
+  Result: -65% initial bundle size, -70% FCP on 3G
+
+────────────────────────────────────────────────────────────
+Explained by git-why
+```
+
+---
+
+### Example 18: Git Blame for Moved/Renamed Files
+
+**Scenario:** Tracking history across file moves.
+
+```bash
+# File was moved from src/old-location.js to src/new-location.js
+$ git-why src/new-location.js:50
+
+📖 Git History Explanation
+────────────────────────────────────────────────────────────
+
+This file was moved from src/utils/helpers.js to src/core/helpers.js
+during the repository restructure in January 2026.
+
+The specific function you're looking at (formatCurrency) was originally
+written in 2024 to handle international currency formatting after a
+bug where Euro symbols displayed as $ for European customers.
+
+The move was part of organizing the codebase by domain (core vs utils).
+The logic itself hasn't changed, just its location. For the full history:
+
+  $ git log --follow src/core/helpers.js
+
+────────────────────────────────────────────────────────────
+Note: git-why automatically follows renames
+Explained by git-why
+```
+
+---
+
+### Example 19: Debugging Flaky Tests
+
+**Scenario:** Understanding why a test has retry logic.
+
+```bash
+$ git-why tests/e2e/checkout.spec.js:45-60 --function testPaymentFlow
+
+📖 Git History Explanation
+────────────────────────────────────────────────────────────
+
+This test has retry logic (attempts: 3, delay: 1000ms) because the
+payment API occasionally returns 503 errors in test environments due
+to rate limiting.
+
+The test isn't flaky due to our code - the Stripe test API sometimes
+throttles requests when the entire CI fleet runs tests simultaneously
+(20 parallel jobs × 5 payment tests = 100 concurrent API calls).
+
+Attempted solutions:
+1. Reduce parallelism → CI time went from 8min to 25min, rejected
+2. Mock Stripe API → Lost integration test value, rejected
+3. Add retry logic → Current solution, works 99.9% of the time
+
+The delay between retries lets other CI jobs finish their API calls.
+This is documented as a known Stripe test API limitation in their docs.
+
+────────────────────────────────────────────────────────────
+Explained by git-why
+```
+
+---
+
+### Example 20: Environment-Specific Code Paths
+
+**Scenario:** Why does this code behave differently in production?
+
+```bash
+$ git-why src/config/logger.js:30
+
+📖 Git History Explanation
+────────────────────────────────────────────────────────────
+
+Logging in production outputs JSON (not pretty-printed) because log
+aggregation tools (DataDog, CloudWatch) expect structured JSON, and
+pretty-printing bloats log storage by ~40%.
+
+Development uses pretty-printed logs for readability. Production uses
+compact JSON for parsing. This decision saved $800/month in log storage.
+
+The environment check (NODE_ENV === 'production') was added after the
+team shipped pretty-printed logs to production and hit storage quotas
+within 2 days. The ops team was not happy.
+
+────────────────────────────────────────────────────────────
+Explained by git-why
+```
+
+---
+
+## Advanced Usage
+
+### Combining with Other Git Tools
+
+**Investigate a complex refactor:**
+
+```bash
+# See what changed
+$ git diff main feature/refactor src/auth.js
+
+# Understand why the old code existed
+$ git-why src/auth.js:42-58
+
+# Check if the new code addresses the same concerns
+$ git show feature/refactor:src/auth.js
+```
+
+---
+
+**Review before merging a PR:**
+
+```bash
+# Get all changed files
+$ git diff --name-only main feature-branch
+
+# Explain each changed section
+$ git diff main feature-branch --stat | \
+  awk '{print $1}' | \
+  xargs -I {} git-why {}
+
+# Or explain a specific risky change
+$ git-why src/payment-processor.js:100-150 --verbose
+```
+
+---
+
+**Understand a performance regression:**
+
+```bash
+# Find when performance degraded
+$ git bisect start
+$ git bisect bad HEAD
+$ git bisect good v1.2.0
+
+# At each bisect step, explain the suspected code
+$ git-why src/api/search.js --verbose
+
+# Narrow down the culprit commit
+$ git bisect good
+```
+
+---
+
+### Integration with Code Review Tools
+
+**GitHub PR Comments:**
+
+```bash
+# Add context to a PR discussion
+$ gh pr view 123
+
+# Explain why code exists before suggesting changes
+$ git-why src/legacy-handler.js:67 > pr-comment.md
+
+# Post explanation as a PR comment
+$ gh pr comment 123 --body-file pr-comment.md
+```
+
+---
+
+**GitLab MR Integration:**
+
+```bash
+# Explain a specific change in an MR
+$ glab mr diff 45 | grep "^+" | head -1  # Get changed file
+$ git-why src/changed-file.js:123
+
+# Add as MR note
+$ glab mr note 45 --message "Historical context: $(git-why src/file.js:123)"
+```
+
+---
+
+### Documenting Architectural Decisions
+
+**Generate ADR (Architecture Decision Record):**
+
+```bash
+# Create ADR from git history
+$ cat > docs/adr/003-database-pooling.md <<EOF
+# ADR 003: Database Connection Pool Size
+
+## Context
+$(git-why config/database.yml:8)
+
+## Decision
+Use pool size of 47 based on production load testing.
+
+## Consequences
+Optimal balance of performance and resource usage.
+Avoids connection timeouts and database CPU spikes.
+EOF
+```
+
+---
+
+### Onboarding New Team Members
+
+**Create onboarding guide:**
+
+```bash
+#!/bin/bash
+# generate-code-tour.sh
+
+echo "# Code Tour: Key Historical Decisions" > TOUR.md
+echo "" >> TOUR.md
+
+# Explain critical files
+for file in src/core/auth.js src/api/payment.js config/database.yml; do
+  echo "## $file" >> TOUR.md
+  echo '```' >> TOUR.md
+  git-why "$file" >> TOUR.md
+  echo '```' >> TOUR.md
+  echo "" >> TOUR.md
+done
+
+echo "Generated TOUR.md for new developers"
+```
+
+---
+
+### Finding Related Changes
+
+**Discover connected commits:**
+
+```bash
+# Explain a function
+$ git-why --function validateUser src/auth.js
+
+# Find all commits that touched this function
+$ git log -L :validateUser:src/auth.js --oneline
+
+# Explain each one
+$ git log -L :validateUser:src/auth.js --oneline | \
+  awk '{print $1}' | \
+  xargs -I {} git show {} | git-why
+```
+
+---
+
+### Automated Documentation Updates
+
+**Pre-commit hook:**
+
+```bash
+#!/bin/bash
+# .git/hooks/pre-commit
+
+# For files being committed, generate historical context
+git diff --cached --name-only | while read file; do
+  # Skip non-code files
+  if [[ $file =~ \.(js|ts|py|rb|go|rs)$ ]]; then
+    # Generate or update inline comments with git context
+    git-why "$file" > "docs/history/${file}.md"
+  fi
+done
+
+# Stage documentation updates
+git add docs/history/
+```
+
+---
+
+### Searching for Specific Patterns in History
+
+**Find why a specific pattern exists:**
+
+```bash
+# Find all setTimeout calls
+$ grep -r "setTimeout" src/ | cut -d: -f1 | sort -u
+
+# Explain each file
+$ grep -r "setTimeout" src/ | cut -d: -f1 | sort -u | \
+  xargs -I {} git-why {}
+
+# Find why async/await was added
+$ git log --all --grep="async" --oneline
+$ git-why src/api/handler.js:42
+```
+
+---
+
+## Troubleshooting
+
+### "No git history found"
+
+```bash
+$ git-why src/new-file.js
+Error: No git history found for this file
+
+# File exists but isn't committed yet
+# Solution:
+$ git add src/new-file.js
+$ git commit -m "Add new file"
+$ git-why src/new-file.js
+```
+
+---
+
+### "Line number out of range"
+
+```bash
+$ git-why src/app.js:9999
+Error: Line number out of range
+  File src/app.js has 156 lines (requested: 9999)
+
+# Check file length:
+$ wc -l src/app.js
+156 src/app.js
+
+# Use correct line number:
+$ git-why src/app.js:100
+```
+
+---
+
+### "Cannot analyze binary files"
+
+```bash
+$ git-why public/logo.png
+Error: Cannot analyze binary files
+
+# git-why only works with text files
+# For binary file history:
+$ git log --follow public/logo.png
+```
+
+---
+
+### "Function not found"
+
+```bash
+$ git-why --function doesNotExist src/app.js
+Error: Function 'doesNotExist' not found in src/app.js
+
+# List available functions:
+$ grep -n "function\|const.*=.*=>" src/app.js
+
+# Or use tree-sitter/ctags:
+$ ctags -x src/app.js
+```
+
+---
+
+### Renamed/Moved Files Not Tracked
+
+```bash
+# Default git blame doesn't follow renames well
+$ git-why src/new-location.js:50
+# May not show full history
+
+# Force follow renames:
+$ git log --follow src/new-location.js
+
+# Or git-why with explicit follow (if supported):
+$ git-why --follow src/new-location.js:50
+```
+
+**Workaround for complex renames:**
+```bash
+# Find original filename
+$ git log --follow --diff-filter=R --find-renames src/new-location.js
+
+# Explain old file
+$ git-why old-location.js:50
+```
+
+---
+
+### Large Repository Performance
+
+```bash
+# For very large repos (>10k commits), git-why may be slow
+$ time git-why src/app.js:42
+# 45 seconds
+
+# Limit commit history depth:
+$ git-why --max-commits 50 src/app.js:42  # Faster, less context
+
+# Or analyze only recent history:
+$ git-why --since="2025-01-01" src/app.js:42
+```
+
+---
+
+### Shallow Clones Missing History
+
+```bash
+$ git-why src/app.js
+Error: Insufficient history (shallow clone)
+
+# Shallow clones (git clone --depth 1) lack history
+# Solution: Fetch full history
+$ git fetch --unshallow
+
+# Then retry:
+$ git-why src/app.js
+```
+
+---
+
+### API Key Issues
+
+```bash
+$ git-why src/app.js
+Error: ANTHROPIC_API_KEY not set
+
+# Solution:
+$ export ANTHROPIC_API_KEY="sk-ant-..."
+
+# Or use different provider (if supported):
+$ export OPENAI_API_KEY="sk-..."
+$ git-why --provider openai src/app.js
+```
+
+---
+
 ## License
 
 MIT
