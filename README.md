@@ -1347,6 +1347,612 @@ git log --all --format="%H %s" --since="2 years ago" | \
 - **Low priority:** Complex logic that prevents real, ongoing issue
 
 ---
+---
+
+## Advanced Workflows
+
+### Workflow 1: Multi-Repository Code Archaeology
+
+**Scenario:** Investigating a bug that spans multiple microservices, each in separate repositories.
+
+**Challenge:** Understanding how a feature evolved across different codebases and when breaking changes were introduced.
+
+**Solution:**
+```bash
+#!/bin/bash
+# cross-repo-analysis.sh - Analyze related code across multiple repos
+
+REPOS=(
+  "~/projects/api-gateway"
+  "~/projects/auth-service"
+  "~/projects/payment-service"
+  "~/projects/shared-utils"
+)
+
+FEATURE="OAuth token validation"
+OUTPUT_DIR="cross-repo-analysis"
+mkdir -p "$OUTPUT_DIR"
+
+echo "# Cross-Repository Analysis: $FEATURE" > "$OUTPUT_DIR/report.md"
+echo "Generated: $(date)" >> "$OUTPUT_DIR/report.md"
+echo "" >> "$OUTPUT_DIR/report.md"
+
+for repo in "${REPOS[@]}"; do
+  repo_name=$(basename "$repo")
+  echo "## Repository: $repo_name" >> "$OUTPUT_DIR/report.md"
+  echo "" >> "$OUTPUT_DIR/report.md"
+  
+  cd "$repo" || continue
+  
+  # Find files related to the feature
+  files=$(git log --all --format="" --name-only --grep="$FEATURE" | sort -u)
+  
+  if [ -z "$files" ]; then
+    echo "No files found related to '$FEATURE'" >> "$OUTPUT_DIR/report.md"
+    echo "" >> "$OUTPUT_DIR/report.md"
+    continue
+  fi
+  
+  for file in $files; do
+    if [ -f "$file" ]; then
+      echo "### $file" >> "$OUTPUT_DIR/report.md"
+      echo '```' >> "$OUTPUT_DIR/report.md"
+      git-why "$file" --no-color >> "$OUTPUT_DIR/report.md" 2>&1
+      echo '```' >> "$OUTPUT_DIR/report.md"
+      echo "" >> "$OUTPUT_DIR/report.md"
+    fi
+  done
+  
+  echo "---" >> "$OUTPUT_DIR/report.md"
+  echo "" >> "$OUTPUT_DIR/report.md"
+done
+
+echo "✅ Cross-repository analysis complete: $OUTPUT_DIR/report.md"
+
+# Generate timeline
+echo "## Timeline" >> "$OUTPUT_DIR/report.md"
+for repo in "${REPOS[@]}"; do
+  cd "$repo" || continue
+  repo_name=$(basename "$repo")
+  git log --all --grep="$FEATURE" --format="%ai | $repo_name | %s" >> "$OUTPUT_DIR/timeline.txt"
+done
+
+sort "$OUTPUT_DIR/timeline.txt" >> "$OUTPUT_DIR/report.md"
+```
+
+**Output:**
+```markdown
+# Cross-Repository Analysis: OAuth token validation
+Generated: Mon Feb 9 06:30:00 2026
+
+## Repository: api-gateway
+
+### src/middleware/auth.js
+This OAuth token validation was added when migrating from JWT to OAuth2.
+The original implementation trusted tokens blindly, but after a security
+audit in Q2 2025, validation was strengthened across all services...
+
+### src/utils/token-parser.js
+Token parsing logic was extracted into shared utilities after discovering
+that each microservice had its own parsing implementation, leading to
+inconsistent validation...
+
+---
+
+## Repository: auth-service
+
+### src/oauth/validator.js
+Central validation service introduced after the 2025-03-15 incident where
+expired tokens were accepted due to clock drift between services...
+
+---
+
+## Timeline
+2025-01-12 14:23:00 +0000 | auth-service | feat: add OAuth2 token validation
+2025-02-08 09:15:00 +0000 | api-gateway | feat: integrate OAuth validation middleware
+2025-03-15 16:45:00 +0000 | auth-service | fix: add clock drift tolerance
+2025-04-20 11:30:00 +0000 | shared-utils | refactor: extract token parser to shared lib
+2025-05-10 08:00:00 +0000 | payment-service | feat: adopt shared token validator
+```
+
+**Benefits:**
+- See how a feature evolved across multiple codebases
+- Identify when breaking changes were introduced
+- Understand dependencies between services
+- Plan coordinated refactoring across repos
+
+---
+
+### Workflow 2: Automated Technical Debt Documentation
+
+**Scenario:** Generate quarterly technical debt reports for stakeholders with historical context on why debt exists.
+
+**Challenge:** Leadership asks "why do we have so much technical debt?" without understanding the business tradeoffs made.
+
+**Solution:**
+```bash
+#!/bin/bash
+# tech-debt-audit.sh - Automated technical debt analysis
+
+DEBT_MARKERS=(
+  "TODO"
+  "FIXME"
+  "HACK"
+  "WORKAROUND"
+  "DEPRECATED"
+  "XXX"
+  "TEMP"
+  "TECH-DEBT"
+)
+
+OUTPUT="tech-debt-report-$(date +%Y-Q$(($(date +%-m)/3+1))).md"
+
+echo "# Technical Debt Audit - $(date +%Y-Q$(($(date +%-m)/3+1)))" > "$OUTPUT"
+echo "" >> "$OUTPUT"
+echo "**Generated:** $(date)" >> "$OUTPUT"
+echo "**Repository:** $(git remote get-url origin)" >> "$OUTPUT"
+echo "" >> "$OUTPUT"
+
+echo "## Executive Summary" >> "$OUTPUT"
+echo "" >> "$OUTPUT"
+
+total_items=0
+total_files=0
+
+for marker in "${DEBT_MARKERS[@]}"; do
+  count=$(git grep -i "$marker" | wc -l | tr -d ' ')
+  total_items=$((total_items + count))
+  echo "- $marker comments: $count" >> "$OUTPUT"
+done
+
+total_files=$(git grep -l -i "TODO\|FIXME\|HACK" | wc -l | tr -d ' ')
+echo "- Files with debt markers: $total_files" >> "$OUTPUT"
+echo "" >> "$OUTPUT"
+
+echo "## Debt Analysis by Category" >> "$OUTPUT"
+echo "" >> "$OUTPUT"
+
+for marker in "${DEBT_MARKERS[@]}"; do
+  echo "### $marker Items" >> "$OUTPUT"
+  echo "" >> "$OUTPUT"
+  
+  # Find files with this marker
+  files=$(git grep -l -i "$marker" || true)
+  
+  if [ -z "$files" ]; then
+    echo "*No $marker markers found.*" >> "$OUTPUT"
+    echo "" >> "$OUTPUT"
+    continue
+  fi
+  
+  echo "$files" | while read file; do
+    if [ ! -f "$file" ]; then
+      continue
+    fi
+    
+    # Extract lines with marker
+    matches=$(git grep -n -i "$marker" "$file" || true)
+    
+    if [ -z "$matches" ]; then
+      continue
+    fi
+    
+    echo "#### $file" >> "$OUTPUT"
+    echo "" >> "$OUTPUT"
+    
+    # Get git-why explanation for the file
+    echo "**Historical Context:**" >> "$OUTPUT"
+    echo '```' >> "$OUTPUT"
+    git-why "$file" --no-color 2>&1 | head -50 >> "$OUTPUT"
+    echo '```' >> "$OUTPUT"
+    echo "" >> "$OUTPUT"
+    
+    # Show the actual TODO/FIXME lines
+    echo "**Debt Items:**" >> "$OUTPUT"
+    echo '```' >> "$OUTPUT"
+    echo "$matches" >> "$OUTPUT"
+    echo '```' >> "$OUTPUT"
+    echo "" >> "$OUTPUT"
+    
+    # Get author and date of last modification
+    last_commit=$(git log -1 --format="%h - %an, %ar: %s" -- "$file")
+    echo "**Last Modified:** $last_commit" >> "$OUTPUT"
+    echo "" >> "$OUTPUT"
+    
+    # Check if file is actively maintained
+    commit_count=$(git log --since="6 months ago" --oneline -- "$file" | wc -l | tr -d ' ')
+    if [ "$commit_count" -gt 5 ]; then
+      echo "⚠️ **Active file** - $commit_count commits in last 6 months" >> "$OUTPUT"
+    else
+      echo "ℹ️ **Stale file** - only $commit_count commits in last 6 months" >> "$OUTPUT"
+    fi
+    echo "" >> "$OUTPUT"
+    echo "---" >> "$OUTPUT"
+    echo "" >> "$OUTPUT"
+  done
+done
+
+echo "## Recommendations" >> "$OUTPUT"
+echo "" >> "$OUTPUT"
+echo "### High Priority (Active files with debt)" >> "$OUTPUT"
+echo "" >> "$OUTPUT"
+git grep -l -i "TODO\|FIXME" | while read file; do
+  commit_count=$(git log --since="3 months ago" --oneline -- "$file" | wc -l | tr -d ' ')
+  if [ "$commit_count" -gt 10 ]; then
+    echo "- **$file** - $commit_count recent commits, high churn" >> "$OUTPUT"
+  fi
+done
+echo "" >> "$OUTPUT"
+
+echo "### Medium Priority (Stale debt in critical paths)" >> "$OUTPUT"
+echo "" >> "$OUTPUT"
+critical_paths=("src/auth" "src/payment" "src/security")
+for path in "${critical_paths[@]}"; do
+  if [ -d "$path" ]; then
+    debt_count=$(git grep -i "TODO\|FIXME" -- "$path" | wc -l | tr -d ' ')
+    if [ "$debt_count" -gt 0 ]; then
+      echo "- **$path** - $debt_count debt items in critical path" >> "$OUTPUT"
+    fi
+  fi
+done
+echo "" >> "$OUTPUT"
+
+echo "### Low Priority (Documentation TODOs)" >> "$OUTPUT"
+echo "" >> "$OUTPUT"
+git grep -l -i "TODO" -- "*.md" "docs/" 2>/dev/null | while read file; do
+  echo "- $file" >> "$OUTPUT"
+done
+echo "" >> "$OUTPUT"
+
+echo "## Trends" >> "$OUTPUT"
+echo "" >> "$OUTPUT"
+echo "Compare with previous quarter's report to track debt growth/reduction." >> "$OUTPUT"
+echo "" >> "$OUTPUT"
+
+echo "---" >> "$OUTPUT"
+echo "" >> "$OUTPUT"
+echo "*Generated with git-why - Understanding the 'why' behind technical debt*" >> "$OUTPUT"
+
+echo "✅ Technical debt report generated: $OUTPUT"
+echo "📊 Total debt items: $total_items across $total_files files"
+```
+
+**Output Example:**
+```markdown
+# Technical Debt Audit - 2026-Q1
+
+**Generated:** Mon Feb 9 06:45:00 2026
+**Repository:** https://github.com/company/flagship-app
+
+## Executive Summary
+
+- TODO comments: 87
+- FIXME comments: 43
+- HACK comments: 12
+- WORKAROUND comments: 8
+- Files with debt markers: 62
+
+## Debt Analysis by Category
+
+### TODO Items
+
+#### src/payment/processor.js
+
+**Historical Context:**
+```
+This payment processing code was rushed during the 2025 Black Friday
+preparation. The TODO items were added as quick fixes to handle edge
+cases discovered in production. The team planned to refactor after the
+holiday season, but the code has remained unchanged...
+```
+
+**Debt Items:**
+```
+156: // TODO: Replace hardcoded timeout with configurable value
+201: // TODO: Add retry logic for transient failures
+304: // TODO: Implement proper error handling instead of swallowing errors
+```
+
+**Last Modified:** a3f7c82 - Jane Doe, 3 months ago: fix: handle null payment provider
+
+⚠️ **Active file** - 23 commits in last 6 months
+
+---
+
+## Recommendations
+
+### High Priority (Active files with debt)
+
+- **src/payment/processor.js** - 23 recent commits, high churn
+- **src/auth/session-manager.js** - 18 recent commits, high churn
+
+### Medium Priority (Stale debt in critical paths)
+
+- **src/auth** - 15 debt items in critical path
+- **src/payment** - 12 debt items in critical path
+
+### Low Priority (Documentation TODOs)
+
+- docs/api.md
+- README.md
+
+## Trends
+
+Compare with previous quarter's report to track debt growth/reduction.
+```
+
+**Benefits:**
+- Quantify technical debt with context
+- Show leadership *why* debt exists (not just that it exists)
+- Prioritize debt reduction based on business impact
+- Track trends over time
+
+---
+
+### Workflow 3: Pre-Refactoring Safety Audit
+
+**Scenario:** Planning a major refactoring of a critical module. Need to understand all the edge cases and historical bugs before touching anything.
+
+**Challenge:** Refactoring without breaking existing functionality, especially edge cases that aren't documented.
+
+**Solution:**
+```bash
+#!/bin/bash
+# pre-refactor-audit.sh - Comprehensive safety check before refactoring
+
+if [ $# -lt 1 ]; then
+  echo "Usage: $0 <file-or-directory-to-refactor>"
+  exit 1
+fi
+
+TARGET="$1"
+AUDIT_DIR="refactor-audit-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$AUDIT_DIR"
+
+echo "🔍 Pre-Refactoring Safety Audit"
+echo "Target: $TARGET"
+echo "Output: $AUDIT_DIR/"
+echo ""
+
+# 1. Historical context
+echo "📖 Step 1: Analyzing historical context..."
+if [ -f "$TARGET" ]; then
+  git-why "$TARGET" --verbose > "$AUDIT_DIR/01-historical-context.md"
+else
+  find "$TARGET" -type f -name "*.js" -o -name "*.ts" | while read file; do
+    echo "## $file" >> "$AUDIT_DIR/01-historical-context.md"
+    git-why "$file" >> "$AUDIT_DIR/01-historical-context.md"
+    echo "" >> "$AUDIT_DIR/01-historical-context.md"
+  done
+fi
+
+# 2. Extract all bug fix commits
+echo "🐛 Step 2: Identifying historical bug fixes..."
+{
+  echo "# Bug Fix History"
+  echo ""
+  git log --all --grep="fix\|bug\|patch\|hotfix" --format="%h | %ai | %an | %s" -- "$TARGET" | head -50
+} > "$AUDIT_DIR/02-bug-fixes.md"
+
+# 3. Find related tests
+echo "🧪 Step 3: Finding related tests..."
+{
+  echo "# Related Tests"
+  echo ""
+  
+  # Extract function/class names from target
+  if [ -f "$TARGET" ]; then
+    functions=$(grep -o "function [a-zA-Z_][a-zA-Z0-9_]*\|class [a-zA-Z_][a-zA-Z0-9_]*\|const [a-zA-Z_][a-zA-Z0-9_]* =" "$TARGET" | awk '{print $2}' | sort -u)
+  else
+    functions=$(find "$TARGET" -name "*.js" -o -name "*.ts" | xargs grep -oh "function [a-zA-Z_][a-zA-Z0-9_]*\|class [a-zA-Z_][a-zA-Z0-9_]*" | awk '{print $2}' | sort -u)
+  fi
+  
+  echo "## Functions/Classes to preserve:"
+  echo "$functions"
+  echo ""
+  
+  # Find tests that reference these functions
+  echo "## Test files:"
+  for func in $functions; do
+    test_files=$(git grep -l "$func" -- "*.test.js" "*.spec.js" "*.test.ts" "*.spec.ts" "**/__tests__/**" 2>/dev/null || true)
+    if [ -n "$test_files" ]; then
+      echo "### Tests for $func:"
+      echo "$test_files"
+      echo ""
+    fi
+  done
+} > "$AUDIT_DIR/03-tests.md"
+
+# 4. Dependencies analysis
+echo "🔗 Step 4: Analyzing dependencies..."
+{
+  echo "# Dependencies"
+  echo ""
+  echo "## Files that import/require this code:"
+  if [ -f "$TARGET" ]; then
+    filename=$(basename "$TARGET")
+    git grep -l "import.*$filename\|require.*$filename" | grep -v "$TARGET"
+  else
+    echo "Directory target - checking for imports of files within..."
+    find "$TARGET" -name "*.js" -o -name "*.ts" | while read file; do
+      filename=$(basename "$file")
+      importers=$(git grep -l "import.*$filename\|require.*$filename" | grep -v "$file")
+      if [ -n "$importers" ]; then
+        echo "### $file is used by:"
+        echo "$importers"
+        echo ""
+      fi
+    done
+  fi
+  
+  echo ""
+  echo "## External dependencies:"
+  if [ -f "$TARGET" ]; then
+    grep "import\|require" "$TARGET" | grep -v "^\/\/" | grep -v "^\s*\*"
+  else
+    find "$TARGET" -name "*.js" -o -name "*.ts" | xargs grep "import\|require" | grep -v "^\/\/" | sort -u
+  fi
+} > "$AUDIT_DIR/04-dependencies.md"
+
+# 5. Code complexity metrics
+echo "📊 Step 5: Measuring code complexity..."
+{
+  echo "# Code Metrics"
+  echo ""
+  
+  if [ -f "$TARGET" ]; then
+    files="$TARGET"
+  else
+    files=$(find "$TARGET" -name "*.js" -o -name "*.ts")
+  fi
+  
+  for file in $files; do
+    echo "## $file"
+    echo ""
+    lines=$(wc -l < "$file" | tr -d ' ')
+    functions=$(grep -c "function \|=> \|class " "$file" || echo "0")
+    complexity=$(grep -o "if \|for \|while \|switch \|catch " "$file" | wc -l | tr -d ' ')
+    
+    echo "- Lines of code: $lines"
+    echo "- Functions/methods: $functions"
+    echo "- Cyclomatic complexity estimate: $complexity"
+    echo ""
+  done
+} > "$AUDIT_DIR/05-metrics.md"
+
+# 6. Production incidents
+echo "🚨 Step 6: Searching for production incidents..."
+{
+  echo "# Production Incidents"
+  echo ""
+  
+  # Search commit messages for incident-related keywords
+  incidents=$(git log --all --grep="incident\|outage\|down\|crash\|critical" --format="%h | %ai | %s" -- "$TARGET")
+  
+  if [ -n "$incidents" ]; then
+    echo "## Incident-related commits:"
+    echo "$incidents"
+  else
+    echo "No incident-related commits found."
+  fi
+  
+  echo ""
+  echo "## Emergency fixes (commits on weekends/late night):"
+  git log --all --format="%h | %ai | %s" -- "$TARGET" | awk -F'|' '{
+    if ($2 ~ /(Sat|Sun)/ || $2 ~ /(2[0-3]|0[0-9]):[0-9]{2}/) print $0
+  }'
+} > "$AUDIT_DIR/06-incidents.md"
+
+# 7. Generate refactoring checklist
+echo "✅ Step 7: Generating refactoring checklist..."
+{
+  echo "# Refactoring Checklist"
+  echo ""
+  echo "Before refactoring $TARGET, ensure:"
+  echo ""
+  echo "## 📖 Context Understanding"
+  echo "- [ ] Read historical context (01-historical-context.md)"
+  echo "- [ ] Understand why each function/pattern exists"
+  echo "- [ ] Identify all edge cases mentioned in commits"
+  echo ""
+  echo "## 🧪 Testing"
+  echo "- [ ] Review existing tests (03-tests.md)"
+  echo "- [ ] Run all tests and ensure they pass"
+  echo "- [ ] Add tests for any missing edge cases found in bug history"
+  echo "- [ ] Achieve 100% code coverage before refactoring"
+  echo ""
+  echo "## 🔗 Dependencies"
+  echo "- [ ] Check all files that import this code (04-dependencies.md)"
+  echo "- [ ] Ensure refactored API remains compatible"
+  echo "- [ ] Update all callers if breaking changes needed"
+  echo ""
+  echo "## 🐛 Bug Prevention"
+  echo "- [ ] Review all bug fixes (02-bug-fixes.md)"
+  echo "- [ ] Ensure refactored code handles all historical edge cases"
+  echo "- [ ] Don't remove 'weird' code without understanding why it exists"
+  echo ""
+  echo "## 🚨 Production Safety"
+  echo "- [ ] Review incident history (06-incidents.md)"
+  echo "- [ ] Test scenarios that caused previous outages"
+  echo "- [ ] Plan gradual rollout (feature flags, canary deployment)"
+  echo "- [ ] Have rollback plan ready"
+  echo ""
+  echo "## 📊 Complexity"
+  echo "- [ ] Check current complexity metrics (05-metrics.md)"
+  echo "- [ ] Aim to reduce complexity, not just change it"
+  echo "- [ ] Keep functions small and single-purpose"
+  echo ""
+  echo "## 📝 Documentation"
+  echo "- [ ] Document why refactoring is needed"
+  echo "- [ ] Update inline comments for complex logic"
+  echo "- [ ] Add ADR (Architecture Decision Record) if major change"
+  echo ""
+  echo "---"
+  echo ""
+  echo "*Generated by pre-refactor-audit.sh*"
+  echo "*Date: $(date)*"
+} > "$AUDIT_DIR/00-CHECKLIST.md"
+
+# Summary
+echo ""
+echo "✅ Pre-refactoring audit complete!"
+echo ""
+echo "📁 Audit files generated in: $AUDIT_DIR/"
+echo ""
+echo "📋 Next steps:"
+echo "  1. Read $AUDIT_DIR/00-CHECKLIST.md"
+echo "  2. Review all audit files"
+echo "  3. Only proceed with refactoring after completing checklist"
+echo ""
+echo "⚠️  Remember: Every 'weird' line of code exists for a reason!"
+```
+
+**Output:**
+```
+🔍 Pre-Refactoring Safety Audit
+Target: src/payment/processor.js
+Output: refactor-audit-20260209-064500/
+
+📖 Step 1: Analyzing historical context...
+🐛 Step 2: Identifying historical bug fixes...
+🧪 Step 3: Finding related tests...
+🔗 Step 4: Analyzing dependencies...
+📊 Step 5: Measuring code complexity...
+🚨 Step 6: Searching for production incidents...
+✅ Step 7: Generating refactoring checklist...
+
+✅ Pre-refactoring audit complete!
+
+📁 Audit files generated in: refactor-audit-20260209-064500/
+
+📋 Next steps:
+  1. Read refactor-audit-20260209-064500/00-CHECKLIST.md
+  2. Review all audit files
+  3. Only proceed with refactoring after completing checklist
+
+⚠️  Remember: Every 'weird' line of code exists for a reason!
+```
+
+**Audit Files Generated:**
+```
+refactor-audit-20260209-064500/
+├── 00-CHECKLIST.md          # Master refactoring checklist
+├── 01-historical-context.md # Why this code exists
+├── 02-bug-fixes.md          # All historical bugs
+├── 03-tests.md              # Related test files
+├── 04-dependencies.md       # Who uses this code
+├── 05-metrics.md            # Code complexity
+└── 06-incidents.md          # Production incidents
+```
+
+**Benefits:**
+- Avoid breaking production with "clean code" that removes critical edge case handling
+- Understand the complete context before touching anything
+- Ensure all historical bugs are covered by tests
+- Make informed decisions about what to keep vs. what to change
+- Reduce risk of introducing regressions
+
+---
 
 ## Tips & Tricks
 
