@@ -1,6 +1,6 @@
 {
-  "name": "@muin/git-why",
-  "version": "0.1.0",
+  "name": "@mj-muin/git-why",
+  "version": "0.1.1",
   "description": "AI-powered git history explainer - understand why code exists",
   "main": "lib/git-why.js",
   "bin": {
@@ -31,6 +31,7 @@
     "commander": "^12.0.0"
   },
   "type": "module",
+  "homepage": "https://github.com/muin-company/git-why#readme",
   "repository": {
     "type": "git",
     "url": "https://github.com/muin-company/git-why.git"
