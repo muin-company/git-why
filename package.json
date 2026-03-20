@@ -1,7 +1,7 @@
 {
-  "name": "@mj-muin/git-why",
+  "name": "git-why",
   "version": "0.1.1",
-  "description": "AI-powered git history explainer - understand why code exists",
+  "description": "Git blame tells you who. git-why tells you WHY. AI-powered git history explainer.",
   "main": "lib/git-why.js",
   "bin": {
     "git-why": "bin/git-why.js"
@@ -11,14 +11,25 @@
   },
   "keywords": [
     "git",
+    "git-blame",
+    "git-log",
+    "git-history",
+    "blame",
     "history",
+    "code-archaeology",
+    "code-review",
     "ai",
+    "claude",
+    "anthropic",
+    "llm",
     "cli",
     "developer-tools",
-    "git-blame",
-    "code-archaeology",
-    "anthropic",
-    "claude"
+    "devtools",
+    "refactoring",
+    "onboarding",
+    "commit-history",
+    "code-explanation",
+    "technical-debt"
   ],
   "author": "muin",
   "license": "MIT",
@@ -31,12 +42,13 @@
     "commander": "^12.0.0"
   },
   "type": "module",
-  "homepage": "https://github.com/muin-company/git-why#readme",
+  "homepage": "https://github.com/muin-company/cli-tools/tree/main/packages/git-why#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/muin-company/git-why.git"
+    "url": "https://github.com/muin-company/cli-tools.git",
+    "directory": "packages/git-why"
   },
   "bugs": {
-    "url": "https://github.com/muin-company/git-why/issues"
+    "url": "https://github.com/muin-company/cli-tools/issues"
   }
 }
