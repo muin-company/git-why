@@ -1,0 +1,22 @@
+# Development files
+*.log
+*.tgz
+node_modules/
+.git/
+.DS_Store
+
+# GitHub files
+.github/
+
+# Documentation (keep only README.md and LICENSE)
+BUILD-SUMMARY.md
+CONTRIBUTING.md
+DEMO.md
+docs/
+
+# Test files
+tests/
+
+# Build artifacts
+coverage/
+.nyc_output/
