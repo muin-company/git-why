@@ -294,6 +294,18 @@ gwhy() { git-why "$@"; }
 - Binary files not supported
 - AI explanations may occasionally misinterpret context
 
+## Also From MUIN
+
+Love `git-why`? Check out our other developer CLI tools:
+
+- **[roast-cli](https://www.npmjs.com/package/roast-cli)** — AI code reviews with Gordon Ramsay energy. Brutally honest feedback from your terminal.
+- **[portguard](https://www.npmjs.com/package/portguard)** — Monitor and kill zombie processes hogging your ports. Fix `EADDRINUSE` in one command.
+- **[oops](https://www.npmjs.com/package/@mj-muin/oops-cli)** — Pipe any error to AI for instant fixes. Debug faster with AI-powered error analysis.
+
+## Featured On
+
+📰 Read the launch article on Dev.to: **[4 CLI Tools Every Developer Needs (That You've Never Heard Of)](https://dev.to/mjmuin/4-cli-tools-every-developer-needs-that-youve-never-heard-of-318b)**
+
 ## License
 
 MIT
