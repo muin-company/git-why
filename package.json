@@ -1,6 +1,6 @@
 {
   "name": "git-why",
-  "version": "0.1.1",
+  "version": "0.1.3",
   "description": "Git blame tells you who. git-why tells you WHY. AI-powered git history explainer.",
   "main": "lib/git-why.js",
   "bin": {
@@ -21,6 +21,9 @@
     "ai",
     "claude",
     "anthropic",
+    "openai",
+    "gpt",
+    "chatgpt",
     "llm",
     "cli",
     "developer-tools",
@@ -29,7 +32,15 @@
     "onboarding",
     "commit-history",
     "code-explanation",
-    "technical-debt"
+    "technical-debt",
+    "developer-experience",
+    "dx",
+    "productivity",
+    "automation",
+    "nodejs",
+    "ai-tools",
+    "git-history-explainer",
+    "code-understanding"
   ],
   "author": "muin",
   "license": "MIT",
