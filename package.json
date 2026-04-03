@@ -1,7 +1,7 @@
 {
   "name": "git-why",
   "version": "0.1.3",
-  "description": "Git blame tells you who. git-why tells you WHY. AI-powered git history explainer.",
+  "description": "Git blame tells you who. git-why tells you WHY. AI-powered git history explainer and commit explainer with git-blame-ai capabilities.",
   "main": "lib/git-why.js",
   "bin": {
     "git-why": "bin/git-why.js"
@@ -10,6 +10,10 @@
     "test": "node tests/test.js"
   },
   "keywords": [
+    "git-history-explainer",
+    "commit-explainer",
+    "git-blame-ai",
+    "ai-git-history",
     "git",
     "git-blame",
     "git-log",
@@ -39,7 +43,6 @@
     "automation",
     "nodejs",
     "ai-tools",
-    "git-history-explainer",
     "code-understanding"
   ],
   "author": "muin",

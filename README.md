@@ -2,6 +2,8 @@
 
 **Git blame tells you who. git-why tells you _WHY_.**
 
+> The AI-powered git history explainer and commit explainer that turns archaeological code digs into human-readable narratives. Think of it as a git-blame-ai that actually explains the reasoning, not just the authorship.
+
 [![npm version](https://img.shields.io/npm/v/git-why.svg)](https://www.npmjs.com/package/git-why)
 [![npm downloads](https://img.shields.io/npm/dm/git-why.svg)](https://www.npmjs.com/package/git-why)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
